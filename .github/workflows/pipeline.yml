@@ -139,4 +139,90 @@ jobs:
           sarif_file: trivy-config.sarif
           category: trivy-config
 
-# deploy + dast jobs are added in a later PR (self-hosted homelab runner)
+  # Deploy and DAST run on the homelab self-hosted runner. The runner group only
+  # accepts this workflow from refs/heads/master, and these jobs never run for
+  # pull requests. The production environment requires an approver.
+  deploy:
+    needs: [build-and-scan, iac-scan]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: [self-hosted, homelab, deploy]
+    environment:
+      name: production
+      url: http://10.10.10.13:8080
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    env:
+      IMAGE_TAG: sha-${{ github.sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout deploy manifest only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy
+          sparse-checkout-cone-mode: true
+
+      - name: Log in to GHCR
+        run: echo "$GH_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Verify build provenance before deploying
+        run: |
+          for c in app db; do
+            gh attestation verify "oci://${IMAGE_PREFIX}-${c}:${IMAGE_TAG}" --repo "${{ github.repository }}"
+          done
+
+      - name: Deploy stack
+        run: |
+          podman-compose -p dvpwa -f deploy/compose.prod.yml pull
+          podman-compose -p dvpwa -f deploy/compose.prod.yml up -d
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ || true)
+            [ "$code" = "200" ] && { echo "App is up (HTTP 200)"; exit 0; }
+            sleep 2
+          done
+          echo "App did not become healthy"; podman-compose -p dvpwa -f deploy/compose.prod.yml logs --tail 50; exit 1
+
+      - name: Log out of GHCR
+        if: always()
+        run: podman logout ghcr.io || true
+
+  dast:
+    needs: deploy
+    runs-on: [self-hosted, homelab, deploy]
+    permissions:
+      contents: read
+    steps:
+      - name: ZAP baseline scan
+        run: |
+          rm -rf "$RUNNER_TEMP/zap" && mkdir -p "$RUNNER_TEMP/zap"
+          # -I: report findings without failing the job (the app is vulnerable on purpose)
+          podman run --rm --network host --userns=keep-id \
+            -v "$RUNNER_TEMP/zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://127.0.0.1:8080 -r zap.html -J zap.json -I
+
+      - name: Summarize findings
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/zap/zap.json"
+          [ -f "$f" ] || { echo "No ZAP report produced" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          {
+            echo "## ZAP baseline (DAST) against production"
+            echo "| Risk | Alert | Instances |"
+            echo "|---|---|---|"
+            jq -r '.site[].alerts[] | "| \(.riskdesc | split(" ")[0]) | \(.name) | \(.count) |"' "$f"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zap-report
+          path: ${{ runner.temp }}/zap/
