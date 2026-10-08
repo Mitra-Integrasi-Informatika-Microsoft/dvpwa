@@ -18,7 +18,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/mitra-integrasi-informatika-microsoft/dvpwa
+  # Override with repo variables when running this demo in another org (lowercase).
+  IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX || 'ghcr.io/mitra-integrasi-informatika-microsoft/dvpwa' }}
 
 jobs:
   build-and-scan:
@@ -150,7 +151,7 @@ jobs:
     runs-on: [self-hosted, homelab, deploy]
     environment:
       name: production
-      url: http://10.10.10.13:8080
+      url: ${{ vars.DEPLOY_URL || 'http://10.10.10.13:8080' }}
     concurrency:
       group: production
       cancel-in-progress: false

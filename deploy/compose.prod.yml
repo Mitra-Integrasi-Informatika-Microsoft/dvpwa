@@ -3,7 +3,7 @@
 # Fully qualified image names: rootless Podman has no short-name registry.
 services:
   postgres:
-    image: ghcr.io/mitra-integrasi-informatika-microsoft/dvpwa-db:${IMAGE_TAG:?set IMAGE_TAG}
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-db:${IMAGE_TAG:?set IMAGE_TAG}
     restart: unless-stopped
 
   redis:
@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
 
   sqli:
-    image: ghcr.io/mitra-integrasi-informatika-microsoft/dvpwa-app:${IMAGE_TAG:?set IMAGE_TAG}
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-app:${IMAGE_TAG:?set IMAGE_TAG}
     depends_on:
       - postgres
       - redis
