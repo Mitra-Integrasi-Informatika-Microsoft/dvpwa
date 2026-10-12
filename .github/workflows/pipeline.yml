@@ -193,6 +193,11 @@ jobs:
       - name: Deploy stack
         run: |
           podman-compose -p dvpwa -f deploy/compose.prod.yml pull
+          # Remove the previous release first. podman-compose 1.0 does not
+          # recreate containers: with old ones present, "up" only restarts
+          # them on the old image. No volumes, so the DB is re-seeded.
+          podman-compose -p dvpwa -f deploy/compose.prod.yml down || true
+          podman ps -aq --filter label=io.podman.compose.project=dvpwa | xargs -r podman rm -f
           podman-compose -p dvpwa -f deploy/compose.prod.yml up -d
 
       - name: Smoke test
