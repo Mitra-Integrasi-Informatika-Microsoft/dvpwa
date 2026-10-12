@@ -1,4 +1,5 @@
-from hashlib import md5
+import hashlib
+import hmac
 from typing import NamedTuple, Optional
 
 from aiopg import Connection
@@ -38,4 +39,11 @@ class User(NamedTuple):
             return User.from_raw(await cur.fetchone())
 
     def check_password(self, password: str):
-        return self.pwd_hash == md5(password.encode('utf-8')).hexdigest()
+        salt = self.username.encode('utf-8')
+        computed_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt,
+            310000,
+        ).hex()
+        return hmac.compare_digest(self.pwd_hash, computed_hash)
