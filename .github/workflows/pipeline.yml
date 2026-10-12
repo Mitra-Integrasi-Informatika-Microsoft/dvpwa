@@ -170,7 +170,14 @@ jobs:
           sparse-checkout-cone-mode: true
 
       - name: Log in to GHCR
-        run: echo "$GH_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+        # One auth file for both tools: podman reads REGISTRY_AUTH_FILE, while
+        # gh attestation verify reads $DOCKER_CONFIG/config.json. RUNNER_TEMP
+        # is wiped after the job, so the token does not stay on the runner.
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+          echo "REGISTRY_AUTH_FILE=$RUNNER_TEMP/docker/config.json" >> "$GITHUB_ENV"
+          echo "$GH_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin --authfile "$RUNNER_TEMP/docker/config.json"
 
       - name: Verify build provenance before deploying
         run: |
