@@ -162,6 +162,11 @@ jobs:
     env:
       IMAGE_TAG: sha-${{ github.sha }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The runner kills processes a job leaves behind ("Cleaning up orphan
+      # processes"). Rootless podman keeps containers alive through such
+      # processes (catatonit, slirp4netns, rootlessport, conmon), so an empty
+      # tracking id keeps the deployed app running after the job ends.
+      RUNNER_TRACKING_ID: ""
     steps:
       - name: Checkout deploy manifest only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -208,6 +213,10 @@ jobs:
     runs-on: [self-hosted, homelab, deploy]
     permissions:
       contents: read
+    env:
+      # Same reason as in deploy: do not let job cleanup kill the shared
+      # rootless podman processes that the running app depends on.
+      RUNNER_TRACKING_ID: ""
     steps:
       - name: ZAP baseline scan
         run: |
