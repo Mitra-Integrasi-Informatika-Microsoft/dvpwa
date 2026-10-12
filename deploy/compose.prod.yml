@@ -1,0 +1,21 @@
+# Production stack for the homelab runner. Images come from GHCR and are
+# pinned to the commit SHA that the pipeline built and attested.
+# Fully qualified image names: rootless Podman has no short-name registry.
+services:
+  postgres:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-db:${IMAGE_TAG:?set IMAGE_TAG}
+    restart: unless-stopped
+
+  redis:
+    image: docker.io/library/redis:alpine
+    restart: unless-stopped
+
+  sqli:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-app:${IMAGE_TAG:?set IMAGE_TAG}
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8080:8080"
+    command: wait-for postgres:5432 -- python run.py
+    restart: unless-stopped
